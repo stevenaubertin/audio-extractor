@@ -5,6 +5,7 @@ Audio Extractor - Extract audio from videos using ffmpeg and yt-dlp
 
 import os
 import sys
+import re
 import click
 import yt_dlp
 import ffmpeg
@@ -15,6 +16,37 @@ from colorama import Fore, Style
 
 # Initialize colorama for Windows compatibility
 colorama.init()
+
+def parse_time_format(time_str: str) -> str:
+    """Parse and validate time format (HH:MM:SS, MM:SS, or seconds)"""
+    if not time_str:
+        return None
+        
+    # Remove whitespace
+    time_str = time_str.strip()
+    
+    # Pattern for HH:MM:SS, MM:SS, or SS formats
+    time_pattern = r'^(?:(?:([0-9]{1,2}):)?([0-5]?[0-9]):)?([0-5]?[0-9])(?:\.([0-9]{1,3}))?$'
+    
+    # Check if it's just seconds (integer or float)
+    if re.match(r'^\d+(?:\.\d+)?$', time_str):
+        return time_str
+    
+    # Check standard time format
+    match = re.match(time_pattern, time_str)
+    if match:
+        return time_str
+    
+    # If no match, raise an error
+    raise click.BadParameter(f"Invalid time format: '{time_str}'. Use HH:MM:SS, MM:SS, or seconds (e.g., 30.5)")
+
+def validate_time_range(start_time: Optional[str], duration: Optional[str], end_time: Optional[str]):
+    """Validate time range parameters"""
+    if duration and end_time:
+        raise click.BadParameter("Cannot specify both --duration and --end-time. Use one or the other.")
+    
+    if (duration or end_time) and not start_time:
+        raise click.BadParameter("--start-time is required when using --duration or --end-time")
 
 class AudioExtractor:
     """Main class for audio extraction operations"""
@@ -34,33 +66,63 @@ class AudioExtractor:
             "low": {"bitrate": "128k", "sample_rate": "44100"}
         }
     
-    def extract_from_local_file(self, input_file: str) -> bool:
-        """Extract audio from a local video file"""
+    def extract_from_local_file(self, input_file: str, start_time: Optional[str] = None, duration: Optional[str] = None, end_time: Optional[str] = None) -> bool:
+        """Extract audio from a local video file, optionally with time range"""
         input_path = Path(input_file)
         
         if not input_path.exists():
             click.echo(f"{Fore.RED}Error: File '{input_file}' not found{Style.RESET_ALL}")
             return False
         
-        # Generate output filename
-        output_filename = f"{input_path.stem}.{self.audio_format}"
+        # Generate output filename with time range info if provided
+        if start_time:
+            time_info = f"_{start_time.replace(':', '')}"
+            if duration:
+                time_info += f"_d{duration.replace(':', '')}"
+            elif end_time:
+                time_info += f"_to{end_time.replace(':', '')}"
+            output_filename = f"{input_path.stem}{time_info}.{self.audio_format}"
+        else:
+            output_filename = f"{input_path.stem}.{self.audio_format}"
+            
         output_path = self.output_dir / output_filename
         
-        click.echo(f"{Fore.CYAN}Extracting audio from: {input_file}{Style.RESET_ALL}")
+        # Display extraction info with time range if provided
+        if start_time:
+            time_info = f" from {start_time}"
+            if duration:
+                time_info += f" for {duration}"
+            elif end_time:
+                time_info += f" to {end_time}"
+            click.echo(f"{Fore.CYAN}Extracting audio{time_info} from: {input_file}{Style.RESET_ALL}")
+        else:
+            click.echo(f"{Fore.CYAN}Extracting audio from: {input_file}{Style.RESET_ALL}")
         
         try:
             # Get quality settings
             settings = self.quality_settings.get(self.quality, self.quality_settings["high"])
             
-            # Use ffmpeg to extract audio
-            stream = ffmpeg.input(str(input_path))
-            stream = ffmpeg.output(
-                stream, 
-                str(output_path),
-                acodec='libmp3lame' if self.audio_format == 'mp3' else None,
-                audio_bitrate=settings["bitrate"],
-                ar=settings["sample_rate"]
-            )
+            # Set up FFmpeg input with time parameters if provided
+            input_args = {}
+            if start_time:
+                input_args['ss'] = start_time
+                
+            stream = ffmpeg.input(str(input_path), **input_args)
+            
+            # Set up output arguments
+            output_args = {
+                'acodec': 'libmp3lame' if self.audio_format == 'mp3' else None,
+                'audio_bitrate': settings["bitrate"],
+                'ar': settings["sample_rate"]
+            }
+            
+            # Add duration or end time if provided
+            if duration and not end_time:
+                output_args['t'] = duration
+            elif end_time and not duration:
+                output_args['to'] = end_time
+                
+            stream = ffmpeg.output(stream, str(output_path), **output_args)
             ffmpeg.run(stream, overwrite_output=True, quiet=True)
             
             click.echo(f"{Fore.GREEN}✓ Audio extracted to: {output_path}{Style.RESET_ALL}")
@@ -73,9 +135,18 @@ class AudioExtractor:
             click.echo(f"{Fore.RED}Error: {e}{Style.RESET_ALL}")
             return False
     
-    def extract_from_url(self, url: str) -> bool:
-        """Download and extract audio from a URL using yt-dlp"""
-        click.echo(f"{Fore.CYAN}Downloading and extracting audio from: {url}{Style.RESET_ALL}")
+    def extract_from_url(self, url: str, start_time: Optional[str] = None, duration: Optional[str] = None, end_time: Optional[str] = None) -> bool:
+        """Download and extract audio from a URL using yt-dlp, optionally with time range"""
+        # Display download info with time range if provided
+        if start_time:
+            time_info = f" from {start_time}"
+            if duration:
+                time_info += f" for {duration}"
+            elif end_time:
+                time_info += f" to {end_time}"
+            click.echo(f"{Fore.CYAN}Downloading and extracting audio{time_info} from: {url}{Style.RESET_ALL}")
+        else:
+            click.echo(f"{Fore.CYAN}Downloading and extracting audio from: {url}{Style.RESET_ALL}")
         
         # Configure yt-dlp options
         ydl_opts = {
@@ -89,6 +160,24 @@ class AudioExtractor:
             'quiet': True,
             'no_warnings': True,
         }
+        
+        # Add time range options for yt-dlp if provided
+        if start_time:
+            # Calculate end time in seconds if we have duration
+            if duration:
+                # Convert times to seconds for calculation
+                start_seconds = self._time_to_seconds(start_time)
+                duration_seconds = self._time_to_seconds(duration)
+                end_seconds = start_seconds + duration_seconds
+                ydl_opts['download_ranges'] = [{'start_time': start_seconds, 'end_time': end_seconds}]
+            elif end_time:
+                start_seconds = self._time_to_seconds(start_time)
+                end_seconds = self._time_to_seconds(end_time)
+                ydl_opts['download_ranges'] = [{'start_time': start_seconds, 'end_time': end_seconds}]
+            else:
+                # Only start time provided
+                start_seconds = self._time_to_seconds(start_time)
+                ydl_opts['download_ranges'] = [{'start_time': start_seconds}]
         
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -141,6 +230,24 @@ class AudioExtractor:
                 click.echo(f"  - {failed_file}")
         
         return successful_extractions
+    
+    def _time_to_seconds(self, time_str: str) -> float:
+        """Convert time string to seconds"""
+        if not time_str:
+            return 0
+            
+        # If it's already in seconds (float or int)
+        if re.match(r'^\d+(?:\.\d+)?$', time_str):
+            return float(time_str)
+            
+        # Parse HH:MM:SS, MM:SS format
+        parts = time_str.split(':')
+        if len(parts) == 3:  # HH:MM:SS
+            return int(parts[0]) * 3600 + int(parts[1]) * 60 + float(parts[2])
+        elif len(parts) == 2:  # MM:SS
+            return int(parts[0]) * 60 + float(parts[1])
+        else:
+            return float(time_str)
 
 @click.group()
 @click.option('--format', default='mp3', 
@@ -166,19 +273,76 @@ def cli(ctx, format, quality, output):
 
 @cli.command()
 @click.argument('file_path')
+@click.option('--start-time', '-s', help='Start time (HH:MM:SS, MM:SS, or seconds)')
+@click.option('--duration', '-d', help='Duration (HH:MM:SS, MM:SS, or seconds)')
+@click.option('--end-time', '-e', help='End time (HH:MM:SS, MM:SS, or seconds)')
 @click.pass_context
-def local(ctx, file_path):
-    """Extract audio from a local video file"""
+def local(ctx, file_path, start_time, duration, end_time):
+    """Extract audio from a local video file
+    
+    Time formats supported:
+    - HH:MM:SS (e.g., 01:23:45)
+    - MM:SS (e.g., 23:45)
+    - Seconds (e.g., 105.5)
+    
+    Examples:
+    - Extract from 1:30 to 2:45: --start-time 1:30 --end-time 2:45
+    - Extract 30 seconds from 1:00: --start-time 1:00 --duration 30
+    - Extract from 90 seconds for 2 minutes: --start-time 90 --duration 2:00
+    """
+    # Validate and parse time parameters
+    try:
+        if start_time:
+            start_time = parse_time_format(start_time)
+        if duration:
+            duration = parse_time_format(duration)
+        if end_time:
+            end_time = parse_time_format(end_time)
+            
+        validate_time_range(start_time, duration, end_time)
+        
+    except click.BadParameter as e:
+        click.echo(f"{Fore.RED}Error: {e}{Style.RESET_ALL}")
+        return
+    
     extractor = ctx.obj['extractor']
-    extractor.extract_from_local_file(file_path)
+    extractor.extract_from_local_file(file_path, start_time, duration, end_time)
 
 @cli.command()
 @click.argument('video_url')
+@click.option('--start-time', '-s', help='Start time (HH:MM:SS, MM:SS, or seconds)')
+@click.option('--duration', '-d', help='Duration (HH:MM:SS, MM:SS, or seconds)')
+@click.option('--end-time', '-e', help='End time (HH:MM:SS, MM:SS, or seconds)')
 @click.pass_context
-def url(ctx, video_url):
-    """Download and extract audio from a URL"""
+def url(ctx, video_url, start_time, duration, end_time):
+    """Download and extract audio from a URL
+    
+    Time formats supported:
+    - HH:MM:SS (e.g., 01:23:45)
+    - MM:SS (e.g., 23:45)
+    - Seconds (e.g., 105.5)
+    
+    Examples:
+    - Extract from 1:30 to 2:45: --start-time 1:30 --end-time 2:45
+    - Extract 30 seconds from 1:00: --start-time 1:00 --duration 30
+    """
+    # Validate and parse time parameters
+    try:
+        if start_time:
+            start_time = parse_time_format(start_time)
+        if duration:
+            duration = parse_time_format(duration)
+        if end_time:
+            end_time = parse_time_format(end_time)
+            
+        validate_time_range(start_time, duration, end_time)
+        
+    except click.BadParameter as e:
+        click.echo(f"{Fore.RED}Error: {e}{Style.RESET_ALL}")
+        return
+    
     extractor = ctx.obj['extractor']
-    extractor.extract_from_url(video_url)
+    extractor.extract_from_url(video_url, start_time, duration, end_time)
 
 @cli.command()
 @click.argument('directory_path')

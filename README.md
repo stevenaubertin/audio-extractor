@@ -5,10 +5,11 @@ A Python tool for extracting audio from videos using ffmpeg and yt-dlp.
 ## Features
 
 - Extract audio from local video files
+- **Time range extraction** - Extract specific segments using start time and duration/end time
 - Download and extract audio from YouTube and other supported platforms
 - Support for multiple audio formats (MP3, WAV, FLAC, AAC)
 - Batch processing capabilities
-- Command-line interface
+- Command-line interface with flexible time format support
 
 ## Prerequisites
 
@@ -110,12 +111,37 @@ python src/extract_audio.py --format mp3 --quality high local "your_video.mp4"
 
 ### Extract audio from a local video file:
 ```bash
+# Extract entire audio
 python src/extract_audio.py --format mp3 --quality high local "path/to/video.mp4"
 ```
 
+### Extract audio from specific time ranges:
+```bash
+# Extract from 1:30 to 2:45
+python src/extract_audio.py --format mp3 local "video.mp4" --start-time 1:30 --end-time 2:45
+
+# Extract 30 seconds starting from 1:00
+python src/extract_audio.py --format mp3 local "video.mp4" --start-time 1:00 --duration 30
+
+# Extract from 90.5 seconds for 2 minutes
+python src/extract_audio.py --format wav local "video.mp4" --start-time 90.5 --duration 2:00
+
+# Extract everything after 5 minutes
+python src/extract_audio.py --format mp3 local "video.mp4" --start-time 5:00
+```
+
+**Time Format Options:**
+- `HH:MM:SS` - Hours, minutes, seconds (e.g., `01:23:45`)
+- `MM:SS` - Minutes, seconds (e.g., `23:45`)
+- Seconds as decimal number (e.g., `105.5`, `30`)
+
 ### Download and extract audio from a URL:
 ```bash
+# Download entire audio
 python src/extract_audio.py --format mp3 --quality high url "https://www.youtube.com/watch?v=VIDEO_ID"
+
+# Download specific time range
+python src/extract_audio.py --format mp3 url "https://www.youtube.com/watch?v=VIDEO_ID" --start-time 2:30 --duration 1:00
 ```
 
 ### Batch processing:
@@ -130,9 +156,49 @@ python src/extract_audio.py check-dependencies
 
 ## Options
 
+### Global Options:
 - `--format`: Audio format (mp3, wav, flac, aac) - default: mp3
 - `--quality`: Audio quality (high, medium, low) - default: high
 - `--output`: Output directory - default: ./output/
+
+### Time Range Options (for `local` and `url` commands):
+- `--start-time` / `-s`: Start time (HH:MM:SS, MM:SS, or seconds)
+- `--duration` / `-d`: Duration from start time (HH:MM:SS, MM:SS, or seconds)  
+- `--end-time` / `-e`: End time (HH:MM:SS, MM:SS, or seconds)
+
+**Note**: Use either `--duration` OR `--end-time` with `--start-time`, not both.
+
+## Time Range Extraction
+
+This tool supports precise time-based audio extraction, similar to FFmpeg's time parameters:
+
+### Supported Time Formats:
+1. **HH:MM:SS** - Hours:Minutes:Seconds (e.g., `01:23:45`)
+2. **MM:SS** - Minutes:Seconds (e.g., `23:45`)
+3. **Seconds** - Decimal seconds (e.g., `105.5`, `30`)
+
+### Usage Patterns:
+
+**Extract from start time to end time:**
+```bash
+python src/extract_audio.py --format mp3 local "video.mp4" --start-time 1:30 --end-time 3:45
+```
+
+**Extract duration from start time:**
+```bash
+python src/extract_audio.py --format mp3 local "video.mp4" --start-time 2:00 --duration 30
+```
+
+**Extract from start time to end of video:**
+```bash
+python src/extract_audio.py --format mp3 local "video.mp4" --start-time 5:00
+```
+
+### File Naming Convention:
+Extracted files with time ranges are automatically named with time information:
+- `video_130_to345.mp3` (from 1:30 to 3:45)
+- `video_200_d30.mp3` (from 2:00 for 30 seconds)
+- `video_50.mp3` (from 5:00 to end)
 
 ## Troubleshooting
 

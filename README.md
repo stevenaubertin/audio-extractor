@@ -115,7 +115,7 @@ python src/extract_audio.py --format mp3 --quality high local "your_video.mp4"
 python src/extract_audio.py --format mp3 --quality high local "path/to/video.mp4"
 ```
 
-### Extract audio from specific time ranges:
+### Extract audio from specific time ranges with millisecond precision:
 ```bash
 # Extract from 1:30 to 2:45
 python src/extract_audio.py --format mp3 local "video.mp4" --start-time 1:30 --end-time 2:45
@@ -126,14 +126,21 @@ python src/extract_audio.py --format mp3 local "video.mp4" --start-time 1:00 --d
 # Extract from 90.5 seconds for 2 minutes
 python src/extract_audio.py --format wav local "video.mp4" --start-time 90.5 --duration 2:00
 
+# Extract with millisecond precision
+python src/extract_audio.py --format mp3 local "video.mp4" --start-time 1:23.456 --duration 30.250
+
+# Extract precise segment with milliseconds
+python src/extract_audio.py --format mp3 local "video.mp4" --start-time 00:01:23.750 --end-time 00:02:45.125
+
 # Extract everything after 5 minutes
 python src/extract_audio.py --format mp3 local "video.mp4" --start-time 5:00
 ```
 
-**Time Format Options:**
-- `HH:MM:SS` - Hours, minutes, seconds (e.g., `01:23:45`)
-- `MM:SS` - Minutes, seconds (e.g., `23:45`)
-- Seconds as decimal number (e.g., `105.5`, `30`)
+**Time Format Options (all support millisecond precision):**
+- `HH:MM:SS.mmm` - Hours, minutes, seconds, milliseconds (e.g., `01:23:45.678`)
+- `MM:SS.mmm` - Minutes, seconds, milliseconds (e.g., `23:45.123`)
+- `SS.mmm` - Seconds, milliseconds (e.g., `45.500`)
+- Decimal seconds with up to 3 decimal places (e.g., `105.250`, `30.125`)
 
 ### Download and extract audio from a URL:
 ```bash
@@ -142,6 +149,9 @@ python src/extract_audio.py --format mp3 --quality high url "https://www.youtube
 
 # Download specific time range
 python src/extract_audio.py --format mp3 url "https://www.youtube.com/watch?v=VIDEO_ID" --start-time 2:30 --duration 1:00
+
+# Download with millisecond precision
+python src/extract_audio.py --format mp3 url "https://www.youtube.com/watch?v=VIDEO_ID" --start-time 2:30.750 --duration 1:15.250
 ```
 
 ### Batch processing:
@@ -162,20 +172,27 @@ python src/extract_audio.py check-dependencies
 - `--output`: Output directory - default: ./output/
 
 ### Time Range Options (for `local` and `url` commands):
-- `--start-time` / `-s`: Start time (HH:MM:SS, MM:SS, or seconds)
-- `--duration` / `-d`: Duration from start time (HH:MM:SS, MM:SS, or seconds)  
-- `--end-time` / `-e`: End time (HH:MM:SS, MM:SS, or seconds)
+- `--start-time` / `-s`: Start time with millisecond precision (HH:MM:SS.mmm, MM:SS.mmm, or decimal seconds)
+- `--duration` / `-d`: Duration from start time with millisecond precision (HH:MM:SS.mmm, MM:SS.mmm, or decimal seconds)  
+- `--end-time` / `-e`: End time with millisecond precision (HH:MM:SS.mmm, MM:SS.mmm, or decimal seconds)
 
 **Note**: Use either `--duration` OR `--end-time` with `--start-time`, not both.
 
-## Time Range Extraction
+## Time Range Extraction with Millisecond Precision
 
-This tool supports precise time-based audio extraction, similar to FFmpeg's time parameters:
+This tool supports precise time-based audio extraction with **millisecond accuracy**, similar to FFmpeg's time parameters:
 
 ### Supported Time Formats:
-1. **HH:MM:SS** - Hours:Minutes:Seconds (e.g., `01:23:45`)
-2. **MM:SS** - Minutes:Seconds (e.g., `23:45`)
-3. **Seconds** - Decimal seconds (e.g., `105.5`, `30`)
+1. **HH:MM:SS.mmm** - Hours:Minutes:Seconds.Milliseconds (e.g., `01:23:45.678`)
+2. **MM:SS.mmm** - Minutes:Seconds.Milliseconds (e.g., `23:45.123`)
+3. **SS.mmm** - Seconds.Milliseconds (e.g., `45.500`)
+4. **Decimal seconds** - Up to 3 decimal places for millisecond precision (e.g., `105.250`, `30.125`)
+
+**Millisecond Support:**
+- Milliseconds can be specified with 1-3 digits (e.g., `.5`, `.50`, `.500`)
+- Values are automatically padded/interpreted correctly
+- Maximum precision: 1 millisecond (0.001 seconds)
+- All time parameters support millisecond precision
 
 ### Usage Patterns:
 
@@ -192,6 +209,18 @@ python src/extract_audio.py --format mp3 local "video.mp4" --start-time 2:00 --d
 **Extract from start time to end of video:**
 ```bash
 python src/extract_audio.py --format mp3 local "video.mp4" --start-time 5:00
+```
+
+**Millisecond precision examples:**
+```bash
+# Extract with sub-second precision
+python src/extract_audio.py --format mp3 local "video.mp4" --start-time 1:23.456 --duration 30.750
+
+# Extract precise segment for audio analysis
+python src/extract_audio.py --format wav local "video.mp4" --start-time 00:01:23.125 --end-time 00:01:25.875
+
+# Extract using decimal seconds with milliseconds
+python src/extract_audio.py --format flac local "video.mp4" --start-time 83.250 --duration 12.500
 ```
 
 ### File Naming Convention:

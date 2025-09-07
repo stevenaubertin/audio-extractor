@@ -18,27 +18,56 @@ from colorama import Fore, Style
 colorama.init()
 
 def parse_time_format(time_str: str) -> str:
-    """Parse and validate time format (HH:MM:SS, MM:SS, or seconds)"""
+    """Parse and validate time format with millisecond precision support
+    
+    Supported formats:
+    - HH:MM:SS.mmm (e.g., 01:23:45.678)
+    - MM:SS.mmm (e.g., 23:45.123)
+    - SS.mmm (e.g., 45.500)
+    - Decimal seconds (e.g., 105.250)
+    
+    Where:
+    - HH: hours (0-99)
+    - MM: minutes (0-59)
+    - SS: seconds (0-59)
+    - mmm: milliseconds (0-999, 1-3 digits)
+    """
     if not time_str:
-        return None
+        raise click.BadParameter("Time parameter cannot be empty")
         
     # Remove whitespace
     time_str = time_str.strip()
     
-    # Pattern for HH:MM:SS, MM:SS, or SS formats
+    # Pattern for HH:MM:SS.mmm, MM:SS.mmm, or SS.mmm formats
+    # Supports millisecond precision with 1-3 digits
     time_pattern = r'^(?:(?:([0-9]{1,2}):)?([0-5]?[0-9]):)?([0-5]?[0-9])(?:\.([0-9]{1,3}))?$'
     
-    # Check if it's just seconds (integer or float)
-    if re.match(r'^\d+(?:\.\d+)?$', time_str):
+    # Check if it's decimal seconds (integer or float with millisecond precision)
+    if re.match(r'^\d+(?:\.\d{1,3})?$', time_str):
         return time_str
     
-    # Check standard time format
+    # Check standard time format with optional milliseconds
     match = re.match(time_pattern, time_str)
     if match:
+        hours, minutes, seconds, milliseconds = match.groups()
+        
+        # Validate milliseconds don't exceed 999
+        if milliseconds and len(milliseconds) <= 3:
+            ms_value = int(milliseconds.ljust(3, '0'))  # Pad to 3 digits
+            if ms_value > 999:
+                raise click.BadParameter(f"Invalid milliseconds: '{milliseconds}'. Must be 0-999")
+        
         return time_str
     
-    # If no match, raise an error
-    raise click.BadParameter(f"Invalid time format: '{time_str}'. Use HH:MM:SS, MM:SS, or seconds (e.g., 30.5)")
+    # If no match, raise an error with detailed format information
+    raise click.BadParameter(
+        f"Invalid time format: '{time_str}'. "
+        "Supported formats:\n"
+        "  • HH:MM:SS.mmm (e.g., 01:23:45.678)\n"
+        "  • MM:SS.mmm (e.g., 23:45.123)\n"
+        "  • SS.mmm (e.g., 45.500)\n"
+        "  • Decimal seconds (e.g., 105.250)"
+    )
 
 def validate_time_range(start_time: Optional[str], duration: Optional[str], end_time: Optional[str]):
     """Validate time range parameters"""
@@ -273,22 +302,24 @@ def cli(ctx, format, quality, output):
 
 @cli.command()
 @click.argument('file_path')
-@click.option('--start-time', '-s', help='Start time (HH:MM:SS, MM:SS, or seconds)')
-@click.option('--duration', '-d', help='Duration (HH:MM:SS, MM:SS, or seconds)')
-@click.option('--end-time', '-e', help='End time (HH:MM:SS, MM:SS, or seconds)')
+@click.option('--start-time', '-s', help='Start time (HH:MM:SS.mmm, MM:SS.mmm, or seconds with millisecond precision)')
+@click.option('--duration', '-d', help='Duration (HH:MM:SS.mmm, MM:SS.mmm, or seconds with millisecond precision)')
+@click.option('--end-time', '-e', help='End time (HH:MM:SS.mmm, MM:SS.mmm, or seconds with millisecond precision)')
 @click.pass_context
 def local(ctx, file_path, start_time, duration, end_time):
-    """Extract audio from a local video file
+    """Extract audio from a local video file with millisecond precision
     
-    Time formats supported:
-    - HH:MM:SS (e.g., 01:23:45)
-    - MM:SS (e.g., 23:45)
-    - Seconds (e.g., 105.5)
+    Time formats supported (all with optional millisecond precision):
+    - HH:MM:SS.mmm (e.g., 01:23:45.678)
+    - MM:SS.mmm (e.g., 23:45.123)
+    - Decimal seconds (e.g., 105.250)
     
     Examples:
     - Extract from 1:30 to 2:45: --start-time 1:30 --end-time 2:45
     - Extract 30 seconds from 1:00: --start-time 1:00 --duration 30
-    - Extract from 90 seconds for 2 minutes: --start-time 90 --duration 2:00
+    - Extract from 90.5 seconds for 2 minutes: --start-time 90.5 --duration 2:00
+    - Extract with millisecond precision: --start-time 1:23.456 --duration 30.250
+    - Extract precise segment: --start-time 00:01:23.750 --end-time 00:02:45.125
     """
     # Validate and parse time parameters
     try:
@@ -310,21 +341,22 @@ def local(ctx, file_path, start_time, duration, end_time):
 
 @cli.command()
 @click.argument('video_url')
-@click.option('--start-time', '-s', help='Start time (HH:MM:SS, MM:SS, or seconds)')
-@click.option('--duration', '-d', help='Duration (HH:MM:SS, MM:SS, or seconds)')
-@click.option('--end-time', '-e', help='End time (HH:MM:SS, MM:SS, or seconds)')
+@click.option('--start-time', '-s', help='Start time (HH:MM:SS.mmm, MM:SS.mmm, or seconds with millisecond precision)')
+@click.option('--duration', '-d', help='Duration (HH:MM:SS.mmm, MM:SS.mmm, or seconds with millisecond precision)')
+@click.option('--end-time', '-e', help='End time (HH:MM:SS.mmm, MM:SS.mmm, or seconds with millisecond precision)')
 @click.pass_context
 def url(ctx, video_url, start_time, duration, end_time):
-    """Download and extract audio from a URL
+    """Download and extract audio from a URL with millisecond precision
     
-    Time formats supported:
-    - HH:MM:SS (e.g., 01:23:45)
-    - MM:SS (e.g., 23:45)
-    - Seconds (e.g., 105.5)
+    Time formats supported (all with optional millisecond precision):
+    - HH:MM:SS.mmm (e.g., 01:23:45.678)
+    - MM:SS.mmm (e.g., 23:45.123)
+    - Decimal seconds (e.g., 105.250)
     
     Examples:
     - Extract from 1:30 to 2:45: --start-time 1:30 --end-time 2:45
     - Extract 30 seconds from 1:00: --start-time 1:00 --duration 30
+    - Extract with millisecond precision: --start-time 1:23.456 --duration 30.250
     """
     # Validate and parse time parameters
     try:
